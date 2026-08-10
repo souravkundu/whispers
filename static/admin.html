@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Admin</title>
+    <style>
+      :root { --paper:#f4f0e8; --ink:#18211c; --muted:#697069; --line:#d4cec3; --green:#174f3a; --green-soft:#d6e4da; --coral:#e06d4f; --white:#fffdf8; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: var(--paper); color: var(--ink); }
+      h1,h2,h3 { font-family: system-ui, sans-serif; }
+      button, input, select { font: inherit; cursor: pointer; }
+      .hidden { display: none !important; }
+
+      #auth-panel { max-width: 420px; margin: 60px auto; padding: 40px; border: 1px solid var(--line); background: var(--white); box-shadow: 8px 8px 0 var(--green); }
+      #auth-panel h1 { margin: 0 0 24px; font-size: 28px; }
+      #auth-panel input { width: 100%; padding: 12px; border: 1px solid var(--line); background: var(--white); margin-bottom: 12px; }
+      #auth-panel button { width: 100%; padding: 12px; border: 0; background: var(--green); color: white; font-weight: 700; font-size: 15px; }
+      #auth-error { color: #a43528; font-size: 13px; min-height: 18px; margin-top: 8px; }
+
+      #admin-panel { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
+      #admin-panel h1 { margin: 0 0 32px; }
+
+      .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--line); margin-bottom: 28px; }
+      .tab-btn { padding: 10px 22px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-weight: 600; margin-bottom: -2px; }
+      .tab-btn.active { border-bottom-color: var(--coral); color: var(--ink); }
+
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--line); font-size: 11px; text-transform: uppercase; color: var(--muted); }
+      td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; word-break: break-all; }
+      tr:hover td { background: var(--paper); }
+
+      .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+      .badge-open { background: #fce8e3; color: #a43528; }
+      .badge-reviewed { background: var(--green-soft); color: var(--green); }
+      .badge-dismissed { background: var(--paper); color: var(--muted); }
+      .badge-disabled { background: #fce8e3; color: #a43528; }
+      .badge-active { background: var(--green-soft); color: var(--green); }
+
+      .action-btn { padding: 4px 10px; border: 1px solid var(--line); background: transparent; font-size: 12px; }
+      .action-btn:hover { background: var(--paper); }
+      .action-btn.danger { border-color: var(--coral); color: var(--coral); }
+
+      select.status-select { padding: 4px 8px; border: 1px solid var(--line); background: var(--white); font-size: 12px; }
+
+      #toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 16px; background: var(--ink); color: white; border-left: 4px solid var(--coral); transform: translateY(100px); opacity: 0; transition: transform .2s, opacity .2s; }
+      #toast.visible { transform: translateY(0); opacity: 1; }
+    </style>
+  </head>
+  <body>
+    <div id="auth-panel">
+      <h1>Whisper Admin</h1>
+      <p style="color:var(--muted);font-size:13px;margin:0 0 20px;">Enter the admin token to continue.</p>
+      <input id="token-input" type="password" placeholder="Admin token" autocomplete="off" />
+      <button id="auth-submit">Sign in</button>
+      <p id="auth-error"></p>
+    </div>
+
+    <div id="admin-panel" class="hidden">
+      <h1>Whisper Admin</h1>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="reports">Reports</button>
+        <button class="tab-btn" data-tab="users">Users</button>
+      </div>
+
+      <div id="tab-reports">
+        <table id="reports-table">
+          <thead><tr><th>#</th><th>Reporter</th><th>Reported</th><th>Reason</th><th>Details</th><th>Date</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p id="no-reports" class="hidden" style="color:var(--muted);font-size:13px;">No reports yet.</p>
+      </div>
+
+      <div id="tab-users" class="hidden">
+        <table id="users-table">
+          <thead><tr><th>Username</th><th>Created</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+      let adminToken = "";
+
+      function showToast(msg) {
+        const t = document.getElementById("toast");
+        t.textContent = msg;
+        t.classList.add("visible");
+        setTimeout(() => t.classList.remove("visible"), 3000);
+      }
+
+      async function adminFetch(path, options = {}) {
+        const resp = await fetch(path, {
+          ...options,
+          headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json", ...options.headers },
+        });
+        const data = resp.status === 204 ? null : await resp.json();
+        if (!resp.ok) throw new Error(data?.detail || `HTTP ${resp.status}`);
+        return data;
+      }
+
+      document.getElementById("auth-submit").addEventListener("click", async () => {
+        adminToken = document.getElementById("token-input").value.trim();
+        try {
+          await adminFetch("/api/admin/reports");
+          document.getElementById("auth-panel").classList.add("hidden");
+          document.getElementById("admin-panel").classList.remove("hidden");
+          loadReports();
+          loadUsers();
+        } catch (e) {
+          document.getElementById("auth-error").textContent = e.message;
+          adminToken = "";
+        }
+      });
+
+      document.getElementById("token-input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") document.getElementById("auth-submit").click();
+      });
+
+      // Tab switching
+      document.querySelectorAll(".tab-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          document.getElementById("tab-reports").classList.toggle("hidden", btn.dataset.tab !== "reports");
+          document.getElementById("tab-users").classList.toggle("hidden", btn.dataset.tab !== "users");
+        });
+      });
+
+      async function loadReports() {
+        const reports = await adminFetch("/api/admin/reports");
+        const tbody = document.querySelector("#reports-table tbody");
+        tbody.innerHTML = "";
+        document.getElementById("no-reports").classList.toggle("hidden", reports.length > 0);
+        for (const r of reports) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${r.id}</td>
+            <td>${r.reporter_username}</td>
+            <td>${r.reported_username}</td>
+            <td>${r.reason}</td>
+            <td style="max-width:200px">${r.details || "—"}</td>
+            <td style="white-space:nowrap">${new Date(r.created_at).toLocaleDateString()}</td>
+            <td><span class="badge badge-${r.status}">${r.status}</span></td>
+            <td>
+              <select class="status-select" data-id="${r.id}">
+                <option value="open" ${r.status === "open" ? "selected" : ""}>open</option>
+                <option value="reviewed" ${r.status === "reviewed" ? "selected" : ""}>reviewed</option>
+                <option value="dismissed" ${r.status === "dismissed" ? "selected" : ""}>dismissed</option>
+              </select>
+              <button class="action-btn save-status" data-id="${r.id}" style="margin-left:6px">Save</button>
+            </td>`;
+          tbody.append(tr);
+        }
+        tbody.querySelectorAll(".save-status").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const id = btn.dataset.id;
+            const status = tbody.querySelector(`.status-select[data-id="${id}"]`).value;
+            await adminFetch(`/api/admin/reports/${id}/status`, { method: "POST", body: JSON.stringify({ status }) });
+            showToast("Status updated");
+            loadReports();
+          });
+        });
+      }
+
+      async function loadUsers() {
+        const users = await adminFetch("/api/admin/users");
+        const tbody = document.querySelector("#users-table tbody");
+        tbody.innerHTML = "";
+        for (const u of users) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td><strong>${u.username}</strong></td>
+            <td>${new Date(u.created_at).toLocaleDateString()}</td>
+            <td><span class="badge ${u.disabled ? "badge-disabled" : "badge-active"}">${u.disabled ? "disabled" : "active"}</span></td>
+            <td>
+              <button class="action-btn ${u.disabled ? "" : "danger"} toggle-user" data-username="${u.username}" data-disabled="${u.disabled}">
+                ${u.disabled ? "Enable" : "Disable"}
+              </button>
+            </td>`;
+          tbody.append(tr);
+        }
+        tbody.querySelectorAll(".toggle-user").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const { username, disabled } = btn.dataset;
+            const action = disabled === "true" ? "enable" : "disable";
+            await adminFetch(`/api/admin/users/${username}/${action}`, { method: "POST" });
+            showToast(`User ${username} ${action}d`);
+            loadUsers();
+          });
+        });
+      }
+    </script>
+  </body>
+</html>

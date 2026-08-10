@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f4f0e8" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Whisper" />
+    <title>Whisper</title>
+    <link rel="manifest" href="/static/manifest.webmanifest" />
+    <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main id="login-view" class="login-view">
+      <section class="login-panel">
+        <div class="brand-mark" aria-hidden="true">W</div>
+        <p class="eyebrow">Private by design</p>
+        <h1>Whisper</h1>
+        <p class="login-copy">Claim a unique name. No profile, no feed, no history that overstays its welcome.</p>
+        <form id="login-form">
+          <label for="login-username">Choose your username</label>
+          <div class="input-row">
+            <input id="login-username" name="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" autocomplete="username" placeholder="night_signal" required />
+            <button type="submit">Enter</button>
+          </div>
+          <label class="password-label" for="login-password">Password for a reserved name</label>
+          <input id="login-password" class="password-input" name="password" type="password" minlength="8" maxlength="128" autocomplete="current-password" placeholder="Leave blank for anonymous access" />
+          <label class="check-label"><input id="reserve-new" name="reserve" type="checkbox" /> Reserve this username so I can reclaim it</label>
+          <p class="field-note">Unreserved names need no password. Reservations are stored in this app's database.</p>
+          <p id="login-error" class="form-error" role="alert"></p>
+        </form>
+      </section>
+    </main>
+
+    <main id="chat-view" class="chat-shell hidden">
+      <aside class="sidebar">
+        <header class="sidebar-header">
+          <div class="brand-lockup"><span class="brand-mark small">W</span><strong>Whisper</strong></div>
+          <div class="header-actions">
+            <button id="install-button" class="icon-button hidden" type="button" title="Install Whisper" aria-label="Install Whisper">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14"/></svg>
+            </button>
+            <button id="logout-button" class="icon-button" type="button" title="Leave session" aria-label="Leave session">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/></svg>
+            </button>
+          </div>
+        </header>
+        <div class="identity"><span class="status-dot"></span><span id="current-username"></span></div>
+        <form id="reserve-form" class="reserve-form">
+          <label for="reserve-password">Reserve this username</label>
+          <div class="reserve-row">
+            <input id="reserve-password" name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" placeholder="Create a password" required />
+            <button type="submit">Reserve</button>
+          </div>
+          <p id="reserve-status" class="field-note"></p>
+        </form>
+        <form id="find-form" class="find-form">
+          <label for="find-username">Start a conversation</label>
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="find-username" name="username" placeholder="Enter exact username" autocomplete="off" required />
+          </div>
+          <p id="find-error" class="form-error" role="alert"></p>
+        </form>
+        <div class="contacts-heading"><span>Saved names</span><span id="contact-count">0</span></div>
+        <div id="contacts" class="contacts"></div>
+        <p id="empty-contacts" class="empty-contacts">Names you save will stay here for quick access.</p>
+
+        <div class="contacts-heading rooms-heading">
+          <span>Rooms</span>
+          <div class="room-actions">
+            <button id="create-room-button" class="icon-button" type="button" title="Create room" aria-label="Create room">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <button id="join-room-button" class="icon-button" type="button" title="Join room" aria-label="Join room by code">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="rooms" class="contacts"></div>
+        <p id="empty-rooms" class="empty-contacts hidden">Create or join a room to chat anonymously.</p>
+      </aside>
+
+      <section id="empty-chat" class="empty-chat">
+        <div class="empty-symbol">···</div>
+        <h2>Quiet until you begin.</h2>
+        <p>Enter an exact username or choose a saved name.</p>
+      </section>
+
+      <section id="conversation" class="conversation hidden">
+        <header class="conversation-header">
+          <button id="back-button" class="icon-button back-button" type="button" aria-label="Back to contacts">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <div class="avatar" id="chat-avatar"></div>
+          <div class="conversation-name"><strong id="chat-username"></strong><span>ephemeral conversation</span></div>
+          <button id="save-button" class="tool-button" type="button" title="Save username">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+            <span>Save</span>
+          </button>
+          <button id="block-button" class="tool-button" type="button" title="Block user">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M6 18L18 6"/></svg>
+            <span>Block</span>
+          </button>
+          <button id="report-button" class="tool-button" type="button" title="Report user">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
+            <span>Report</span>
+          </button>
+          <label class="expiry-control" title="Message lifetime">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            <select id="expiry-select" aria-label="Message lifetime">
+              <option value="1">1 hour</option>
+              <option value="6">6 hours</option>
+              <option value="24">1 day</option>
+              <option value="72">3 days</option>
+              <option value="168">7 days</option>
+              <option value="720">30 days</option>
+            </select>
+          </label>
+        </header>
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <div id="blocked-notice" class="blocked-notice hidden">You have blocked this user. <button id="unblock-inline" type="button">Unblock</button></div>
+        <form id="message-form" class="composer">
+          <textarea id="message-input" rows="1" maxlength="2000" placeholder="Write a message" aria-label="Message" required></textarea>
+          <button class="send-button" type="submit" title="Send message" aria-label="Send message">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/></svg>
+          </button>
+        </form>
+      </section>
+    </main>
+    <div id="toast" class="toast" role="status"></div>
+
+    <!-- Report dialog -->
+    <dialog id="report-dialog" class="modal-dialog">
+      <form id="report-form" method="dialog">
+        <h3>Report user</h3>
+        <label for="report-reason">Reason</label>
+        <select id="report-reason" name="reason" required>
+          <option value="">Select a reason…</option>
+          <option value="spam">Spam</option>
+          <option value="harassment">Harassment</option>
+          <option value="abuse">Abuse</option>
+          <option value="impersonation">Impersonation</option>
+          <option value="other">Other</option>
+        </select>
+        <label for="report-details">Details (optional)</label>
+        <textarea id="report-details" name="details" rows="3" maxlength="1000" placeholder="Describe what happened…"></textarea>
+        <div class="modal-actions">
+          <button type="submit" value="submit">Submit report</button>
+          <button type="button" id="report-cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Create room dialog -->
+    <dialog id="create-room-dialog" class="modal-dialog">
+      <form id="create-room-form" method="dialog">
+        <h3>Create a room</h3>
+        <label for="room-name">Room name</label>
+        <input id="room-name" name="display_name" maxlength="60" placeholder="e.g. Friday standup" required />
+        <label for="room-expires">Room expires in</label>
+        <select id="room-expires" name="expires_in_hours">
+          <option value="">Never</option>
+          <option value="1">1 hour</option>
+          <option value="24">24 hours</option>
+          <option value="168">7 days</option>
+        </select>
+        <label for="room-msg-lifetime">Message lifetime</label>
+        <select id="room-msg-lifetime" name="default_message_lifetime_hours">
+          <option value="1">1 hour</option>
+          <option value="24" selected>24 hours</option>
+          <option value="168">7 days</option>
+        </select>
+        <div class="modal-actions">
+          <button type="submit" value="submit">Create</button>
+          <button type="button" id="create-room-cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Join room dialog -->
+    <dialog id="join-room-dialog" class="modal-dialog">
+      <form id="join-room-form" method="dialog">
+        <h3>Join a room</h3>
+        <label for="join-room-code">Room code</label>
+        <input id="join-room-code" name="room_code" maxlength="20" placeholder="e.g. AB3XY7" autocomplete="off" required />
+        <p id="join-room-error" class="form-error" role="alert"></p>
+        <div class="modal-actions">
+          <button type="submit" value="submit">Join</button>
+          <button type="button" id="join-room-cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
