@@ -335,12 +335,16 @@ def test_expired_room_rejects_messages(tmp_path, monkeypatch):
         )
         room_code = room.json()["room_code"]
 
-        # manually expire the room via DB
+        # manually expire the room via SQLAlchemy session
         from datetime import UTC, datetime, timedelta
-        from app.main import connect, DATABASE_PATH
+        from sqlalchemy import text as sql_text
         past = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
-        with connect() as db:
-            db.execute("UPDATE rooms SET expires_at = ? WHERE room_code = ?", (past, room_code))
+        with chat.SessionLocal() as db:
+            db.execute(
+                sql_text("UPDATE rooms SET expires_at = :ts WHERE room_code = :code"),
+                {"ts": past, "code": room_code},
+            )
+            db.commit()
 
         send = client.post(
             f"/api/rooms/{room_code}/messages",
@@ -493,3 +497,169 @@ def test_admin_list_users(tmp_path, monkeypatch):
         usernames = [u["username"] for u in users]
         assert "alice" in usernames
         assert "bob" in usernames
+
+
+# ── Stage 2: configuration ────────────────────────────────────────────────────
+
+def test_config_defaults():
+    from app.config import Settings
+    s = Settings()
+    url = s.effective_database_url
+    assert url.startswith("sqlite:///")
+    assert "chat.db" in url
+
+
+def test_config_chat_db_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHAT_DB", str(tmp_path / "custom.db"))
+    from app.config import Settings
+    s = Settings()
+    assert str(tmp_path / "custom.db") in s.effective_database_url
+
+
+def test_config_database_url_takes_precedence(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHAT_DB", str(tmp_path / "ignored.db"))
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///./explicit.db")
+    from app.config import Settings
+    s = Settings()
+    assert s.effective_database_url == "sqlite:///./explicit.db"
+
+
+def test_config_repr_hides_secrets(monkeypatch):
+    monkeypatch.setenv("ADMIN_TOKEN", "super_secret_token_value")
+    monkeypatch.setenv("REDIS_URL", "redis://:password@localhost/0")
+    from app.config import Settings
+    s = Settings()
+    r = repr(s)
+    assert "super_secret_token_value" not in r
+    assert "password" not in r
+    assert "has_admin_token=True" in r
+    assert "has_redis_url=True" in r
+
+
+# ── Stage 3: SQLAlchemy engine / db layer ─────────────────────────────────────
+
+def test_build_engine_sqlite(tmp_path):
+    from app.db import build_engine, check_database
+    engine = build_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    assert check_database(engine)
+
+
+def test_check_database_bad_url():
+    from app.db import build_engine, check_database
+    engine = build_engine("sqlite:////nonexistent_dir/nope/test.db")
+    # check_database should return False for an inaccessible path
+    result = check_database(engine)
+    assert isinstance(result, bool)
+
+
+# ── Stage 4: ORM models ───────────────────────────────────────────────────────
+
+def test_models_register_with_base():
+    from app.db import Base
+    from app import models  # noqa: F401 — ensure registration
+    tables = set(Base.metadata.tables.keys())
+    expected = {"users", "contacts", "conversations", "messages",
+                "blocked_users", "reports", "rooms", "room_members", "room_messages"}
+    assert expected.issubset(tables)
+
+
+# ── Stage 5: repository layer ─────────────────────────────────────────────────
+
+def test_repository_user_crud(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHAT_DB", str(tmp_path / "repo_user.db"))
+    import app.main
+    chat = importlib.reload(app.main)
+    from datetime import UTC, datetime
+    import app.repositories.users as users_repo
+    from app.db import Base
+
+    Base.metadata.create_all(chat.engine)
+    with chat.SessionLocal() as db:
+        user = users_repo.create(db, username="TestUser", token="tok1", created_at=datetime.now(UTC))
+        db.commit()
+        assert user.id is not None
+
+        found = users_repo.get_by_username(db, "testuser")  # case-insensitive
+        assert found is not None
+        assert found.username == "TestUser"
+
+        not_found = users_repo.get_by_username(db, "nobody")
+        assert not_found is None
+
+        found_by_token = users_repo.get_by_token(db, "tok1")
+        assert found_by_token.id == user.id
+
+
+def test_repository_blocks(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHAT_DB", str(tmp_path / "repo_blocks.db"))
+    import app.main
+    chat = importlib.reload(app.main)
+    from datetime import UTC, datetime
+    import app.repositories.users as users_repo
+    import app.repositories.blocks as blocks_repo
+    from app.db import Base
+
+    Base.metadata.create_all(chat.engine)
+    with chat.SessionLocal() as db:
+        u1 = users_repo.create(db, username="u1", token="t1", created_at=datetime.now(UTC))
+        u2 = users_repo.create(db, username="u2", token="t2", created_at=datetime.now(UTC))
+        db.commit()
+        assert not blocks_repo.is_blocked(db, u1.id, u2.id)
+        blocks_repo.block(db, u1.id, u2.id, datetime.now(UTC))
+        db.commit()
+        assert blocks_repo.is_blocked(db, u1.id, u2.id)
+        blocks_repo.unblock(db, u1.id, u2.id)
+        db.commit()
+        assert not blocks_repo.is_blocked(db, u1.id, u2.id)
+
+
+# ── Stage 14: health endpoints ────────────────────────────────────────────────
+
+def test_health_ok(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHAT_DB", str(tmp_path / "health.db"))
+    import app.main
+    chat = importlib.reload(app.main)
+    with TestClient(chat.app) as client:
+        r = client.get("/health")
+        assert r.status_code == 200
+        assert r.json() == {"status": "ok"}
+
+
+def test_health_dependencies(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHAT_DB", str(tmp_path / "healthdeps.db"))
+    import app.main
+    chat = importlib.reload(app.main)
+    with TestClient(chat.app) as client:
+        r = client.get("/health/dependencies")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["database"] == "up"
+        assert body["redis"] == "not_configured"
+        assert body["mode"] == "single_instance"
+
+
+def test_readiness_ok(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHAT_DB", str(tmp_path / "ready.db"))
+    import app.main
+    chat = importlib.reload(app.main)
+    with TestClient(chat.app) as client:
+        r = client.get("/ready")
+        assert r.status_code == 200
+        assert r.json() == {"status": "ready"}
+
+
+# ── Stage 7: Alembic migration smoke test ────────────────────────────────────
+
+def test_alembic_upgrade_head_on_fresh_db(tmp_path):
+    import subprocess, sys
+    db_path = tmp_path / "alembic_smoke.db"
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd="c:\\telstra\\whispers",
+        env={**os.environ, "CHAT_DB": str(db_path)},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"Alembic failed:\n{result.stderr}"
+    assert db_path.exists()
+

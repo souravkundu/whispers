@@ -469,7 +469,7 @@ $("#install-button").addEventListener("click", async () => {
   const choice = await installPrompt.userChoice;
   installPrompt = null;
   $("#install-button").classList.add("hidden");
-  if (choice.outcome === "accepted") showToast("Whisper installed");
+  if (choice.outcome === "accepted") showToast("Whisperss installed");
 });
 $("#logout-button").addEventListener("click", () => {
   state.token = null;
